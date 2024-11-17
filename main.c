@@ -1,4 +1,4 @@
-#include "definitions.h"
+#include "main.h"
 
 
 // System interrupt (every 0.625us)
@@ -385,15 +385,7 @@ void USART_text( char* text ){
     }
 }
 
-void wait_ms( uint16_t ms ){
-    while(ms--)
-        _delay_ms(1);
-}
 
-void wait_us( uint8_t us ){
-    while(us--)
-        _delay_us(1);
-}
 
 static void fake_shutdown( void ){
     wdt_disable();
