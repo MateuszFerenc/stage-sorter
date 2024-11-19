@@ -1,5 +1,9 @@
 #include "main.h"
 
+FUSES = {
+    .low = (FUSE_BODEN & FUSE_CKSEL0),
+    .high = (FUSE_BOOTSZ0 & FUSE_BOOTSZ1 & FUSE_EESAVE & FUSE_SPIEN & FUSE_CKOPT),
+};
 
 // System interrupt (every 0.625us)
 ISR(TIMER2_COMP_vect){
@@ -75,9 +79,9 @@ ISR(TIMER2_COMP_vect){
         if ( system_counter % (2 << ( 7 + ( blink_conf >> 4)) ) == 0){
             blink_position ^= 0x80;
             if (blink_position & 0x80)
-                put_data_to_lcd_buffer(&blink_buffer, blink_conf & 0x0F, (blink_position >> 5) & 3, blink_position & 0x0F, disp_active_buffer, 0);
+                put_data_to_lcd_buffer(&blink_buffer, blink_conf & 0x0F, (blink_position >> 5) & 3, blink_position & 0x0F, disp_active_buffer_get(), 0);
             else
-                put_one_char(255, blink_conf & 0x0F, (blink_position >> 5) & 3, blink_position & 0x0F, disp_active_buffer);
+                put_one_char(255, blink_conf & 0x0F, (blink_position >> 5) & 3, blink_position & 0x0F, disp_active_buffer_get());
         }
     }
 
@@ -91,7 +95,6 @@ ISR(TIMER0_COMP_vect){
     static uint8_t pwm_counter = 0xFF, pwm_mask = 0;
     static uint8_t key_scan_row = 0;
     static uint8_t key_col_state[4] = { 0 };
-    static uint8_t disp_delay = 0, disp_temp_data = 0, disp_column_counter = 0, disp_state = DISP_STATE_NOP, disp_last_state = DISP_STATE_NOP;
 
     
     PIN_control(PWM0_port, PWM0_pin, (pwm_mask & 1));
@@ -132,89 +135,7 @@ ISR(TIMER0_COMP_vect){
         }
     }
 
-    if ( disp_state == DISP_STATE_NOP ){
-        if ( ( disp_buffers_dirty || disp_column_counter ) && disp_operation == DISP_STATE_NOP ){
-            if ( disp_column_counter == 0 ){
-                unsigned buff_switch_offset = ( disp_active_buffer == DISP_BACKBUFFER )? 4 : 0;
-                for (unsigned char buff_idx = buff_switch_offset; buff_idx < ( 4 + buff_switch_offset ); buff_idx++ ){
-                    if ( ( disp_buffers_dirty >> buff_idx ) & 1 ){
-                        disp_buffer_pointer = (unsigned char *)disp_linear_buff + (unsigned char)(buff_idx * 20);
-                        disp_column_counter = 20;
-                        disp_buffers_dirty &= ~( 1 << buff_idx );
-                        disp_state = DISP_STATE_MCURSOR;
-                        currentCol = 0;
-                        currentRow = buff_idx % 4;
-                        disp_temp_data = 0x80 | lcdRowStart[currentRow];
-                        break;
-                    }
-                }
-            } else {
-                PIN_set(PORTD, PD3);
-                disp_state = DISP_STATE_PUTHDATA;
-                disp_temp_data = *((uint8_t *)disp_buffer_pointer++);
-                disp_column_counter--;
-            }
-        } else {
-            disp_state = disp_operation;
-        }
-    }
-
-    if ( disp_state == DISP_STATE_MCURSOR ){
-        disp_state = DISP_STATE_PUTHDATA;
-        PIN_clear(PORTD, PD3);
-        disp_temp_data = 0x80 | ( lcdRowStart[currentRow] + currentCol);      // lcd home command
-    }
-
-    if ( disp_state == DISP_STATE_HOME ){
-        disp_state = DISP_STATE_PUTHDATA;
-        currentCol = 0;
-        currentRow = 0;
-        PIN_clear(PORTD, PD3);
-        disp_temp_data = 0x02;      // lcd home command
-    }
-
-    if ( disp_state == DISP_STATE_CLEAR ){
-        disp_state = DISP_STATE_PUTHDATA;
-        PIN_clear(PORTD, PD3);
-        disp_temp_data = 0x01;      // lcd clear command
-    }
-
-    if ( disp_state == DISP_STATE_PUTHDATA || disp_state == DISP_STATE_PUTLDATA ){
-        disp_last_state = disp_state;
-
-        PORTC &= 0xF0;
-        PORTC |= ( disp_state == DISP_STATE_PUTHDATA ) ? ( disp_temp_data >> 4 ) : ( disp_temp_data & 0x0F );
-
-        disp_state = DISP_STATE_WAIT;
-        disp_delay = 2;
-    }
-
-    if ( disp_state == DISP_STATE_WAIT ){
-        if ( --disp_delay == 0 ){
-            disp_state = DISP_STATE_ENTOGGLE;
-        }
-    }
-
-    if ( disp_state == DISP_STATE_ENWAIT ){
-        if ( --disp_delay == 0 ){
-            if ( disp_last_state == DISP_STATE_PUTHDATA )
-                disp_state = DISP_STATE_PUTLDATA;
-            else {
-                disp_state = DISP_STATE_NOP;
-                disp_operation = DISP_STATE_NOP;
-            }
-        }
-    }
-
-    if ( disp_state == DISP_STATE_ENTOGGLE ){
-        disp_state = DISP_STATE_ENWAIT;
-
-        PIN_clear(PORTD, PD6);
-        PIN_set(PORTD, PD6);
-        PIN_clear(PORTD, PD6);
-
-        disp_delay = 2;
-    }
+    process_lcd_FSM();
 }
 
 ISR ( BADISR_vect ){}
@@ -231,110 +152,11 @@ unsigned char get_keypad_character( void ){
     return '-';
 }
 
-void put_data_to_lcd_buffer( void * data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash){
-    unsigned char position = (unsigned char)(buffer + (row * 20) + col), temp;
-    for (unsigned char offset = 0; length > 0 ; length--, offset++ ){
-        if ( from_flash )
-            temp = pgm_read_byte(data + offset);
-        else
-            temp = *((unsigned char *)data + offset);
-        if ( temp < 32)
-            break;
-        *( disp_linear_buff + position ) = temp;
-        position++;
-    }
-    disp_buffers_dirty |= 1 << ( ( buffer / 20 ) + row );
-}
-
-uint8_t disp_swap_buffers( void ){
-    if ( disp_active_buffer == DISP_FRONTBUFFER ){
-        disp_active_buffer = DISP_BACKBUFFER;
-        disp_buffers_dirty = 0xF0;
-    } else {
-        disp_active_buffer = DISP_FRONTBUFFER;
-        disp_buffers_dirty = 0x0F;
-    }
-    return disp_active_buffer;
-}
-
-static uint8_t disp_active_buffer_get( void ){
-    return disp_active_buffer;
-}
-
-void disp_clear_buffer(uint8_t buffer){
-    for (unsigned char offset = (unsigned char)buffer; offset < (80 + buffer); offset++)
-        *( disp_linear_buff + offset ) = (unsigned char)' ';
-    if ( buffer == DISP_FRONTBUFFER )
-        disp_buffers_dirty = 0x0F;
-    else
-        disp_buffers_dirty = 0xF0;
-}
-
-void put_one_char(unsigned char character, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer){
-    unsigned char temp[20];
-    if ( col + length > 20 )
-        length -= col;
-    for ( uint8_t chr = 0; chr < length; chr++)
-        temp[chr] = character;
-    put_data_to_lcd_buffer(&temp, length, row, col, buffer, 0);
-}
-
-
-void lcd_command(uint8_t command){
-    PIN_clear(PORTD, PD3);
-    lcd_write_nibble(command >> 4);
-    lcd_write_nibble(command);
-}
-
-void lcd_write_nibble(uint8_t data){
-    PORTC &= 0xF0;
-    PORTC |= (data & 0x0F);
-    wait_us(200);
-
-    PIN_clear(PORTD, PD6);
-    PIN_set(PORTD, PD6);
-    PIN_clear(PORTD, PD6);
-
-    wait_us(200);
-}
-
-static void lcd_init(void){
-    for ( uint8_t enable_4b_mode = 0; enable_4b_mode < 3; enable_4b_mode++){
-        lcd_write_nibble(0x03);
-        wait_ms(5);
-    }
-    lcd_write_nibble(0x02);
-    wait_ms(1);
-    
-    lcd_command(0x28);
-    
-    lcd_command(0x01);     // lcd clear
-    wait_ms(2);
-
-    lcd_command(0x0C);
-    lcd_command(0x06);
-    
-    lcdRowStart[0] = 0x00;
-    lcdRowStart[1] = 0x40;
-    lcdRowStart[2] = 20;            // Number of columns
-    lcdRowStart[3] = 0x50 + 4;        // plus number of rows
-    
-    lcd_command(0x02);      // lcd home
-    wait_ms(2);
-
-    PIN_set(PORTD, PD3);
-    lcd_write_nibble('O' >> 4);
-    lcd_write_nibble('O');
-    lcd_write_nibble('K' >> 4);
-    lcd_write_nibble('K');
-    wait_ms(120);
-}
-
 uint8_t blink_init(uint8_t row, uint8_t col, uint8_t length, uint8_t period){
     if ( col + length > 20)
         return 255;
 
-    unsigned char offset = (unsigned char)(disp_active_buffer + (row * 20) + col);
+    unsigned char offset = (unsigned char)(disp_active_buffer_get() + (row * 20) + col);
     for ( unsigned char character = 0; character < length; character++){
         *( blink_buffer + character ) = *( disp_linear_buff + offset + character );
     }
@@ -356,36 +178,6 @@ uint8_t read_keypad( void ){
     key_code = 0;
     return temp;
 }
-
-void USART_Init( unsigned int ubrr ){
-    UBRRH = (unsigned char)(ubrr>>8);
-    UBRRL = (unsigned char)ubrr;
-    UCSRB = (1<<RXEN)|(1<<TXEN);
-    UCSRC = (1<<USBS)|(3<<UCSZ0);
-}
-
-void USART_Transmit( char data ){
-    while ( !( UCSRA & (1<<UDRE)) );
-    UDR = data;
-}
-
-unsigned char USART_Receive( void ){
-    while ( !(UCSRA & (1<<RXC)) );
-    return UDR;
-}
-
-void USART_Flush( void ){
-    unsigned char dummy;
-    while ( UCSRA & (1<<RXC) ) dummy = UDR;
-}
-
-void USART_text( char* text ){
-    while(*text){
-        USART_Transmit((unsigned char) *text++);
-    }
-}
-
-
 
 static void fake_shutdown( void ){
     wdt_disable();
@@ -472,13 +264,13 @@ void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset,
         temp_val = 0;
 
         // clear line
-        put_one_char(' ', 20, i, 0, disp_active_buffer);
+        put_one_char(' ', 20, i, 0, disp_active_buffer_get());
         
         // Display parameter name
-        put_data_to_lcd_buffer(&names_ptr[(i + offset) * names_len], names_len, i, 0, disp_active_buffer, 1);
+        put_data_to_lcd_buffer(&names_ptr[(i + offset) * names_len], names_len, i, 0, disp_active_buffer_get(), 1);
 
         // Display ':' separator
-        put_one_char(':', 1, i, names_len, disp_active_buffer);
+        put_one_char(':', 1, i, names_len, disp_active_buffer_get());
 
         // Get 16-bit value from array in specified manner
         if ( (values_src & MASK_LOAD_PARAMETERS_MODE ) == __LOAD_PARAMETERS_DIRECT ){
@@ -516,7 +308,7 @@ void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset,
         utoa(temp_val, val, 10);
 
         // Display given value
-        put_data_to_lcd_buffer(val, values_len, i, values_pos, disp_active_buffer, 0);
+        put_data_to_lcd_buffer(val, values_len, i, values_pos, disp_active_buffer_get(), 0);
     }
 }
 
@@ -543,6 +335,44 @@ void display_prompt(uint8_t type, void * text, uint8_t text_length, uint8_t buff
     }
 }
 
+void wait_ms( uint16_t ms ){
+    while(ms--)
+        _delay_ms(1);
+}
+
+void wait_us( uint8_t us ){
+    while(us--)
+        _delay_us(1);
+}
+
+void USART_Init( unsigned int ubrr ){
+    UBRRH = (unsigned char)(ubrr>>8);
+    UBRRL = (unsigned char)ubrr;
+    UCSRB = (1<<RXEN)|(1<<TXEN);
+    UCSRC = (1<<USBS)|(3<<UCSZ0);
+}
+
+void USART_Transmit( char data ){
+    while ( !( UCSRA & (1<<UDRE)) );
+    UDR = data;
+}
+
+unsigned char USART_Receive( void ){
+    while ( !(UCSRA & (1<<RXC)) );
+    return UDR;
+}
+
+void USART_Flush( void ){
+    unsigned char dummy;
+    while ( UCSRA & (1<<RXC) ) dummy = UDR;
+}
+
+void USART_text( char* text ){
+    while(*text){
+        USART_Transmit((unsigned char) *text++);
+    }
+}
+
 static void setup( void ){
     cli();
     //USART_Init(96);        // UART - 9600 Baudrate
@@ -550,7 +380,7 @@ static void setup( void ){
     DDRB = 0x0F;
     DDRC = 0xFF;
     DDRD = 0xFC;
-
+    
     PORTA = 0x70;
     PORTB = 0xFF;
     PORTC = 0xF0;
@@ -583,6 +413,14 @@ static void setup( void ){
     compare_PWM1 = 0;
     compare_PWM2 = 0;
 
+    lcd_pins.RS = PD3;
+    lcd_pins.EN = PD6;
+    lcd_pins.D4 = PC0;
+    lcd_pins.D5 = PC1;
+    lcd_pins.D6 = PC2;
+    lcd_pins.D7 = PC3;
+    lcd_ports.LCD_RS_EN_PORT = PORTD;
+    lcd_ports.LCD_DATA_PORT = PORTC;
     lcd_init();
     sei();
 }
@@ -623,7 +461,7 @@ int main( void ){
     // Display version and compilation date
     put_data_to_lcd_buffer(&sorter_version, 11, 0, 0, DISP_FRONTBUFFER, 1);
     put_data_to_lcd_buffer(&compilation_date, 11, 1, 0, DISP_FRONTBUFFER, 1);
-    put_data_to_lcd_buffer(&dev0_name, 14, 3, 0, DISP_FRONTBUFFER, 1);
+    put_data_to_lcd_buffer(&dev_name, 14, 3, 0, DISP_FRONTBUFFER, 1);
     
     // Quick color sense LEDs test
     PIN_clear(RED_LED_port, RED_LED_pin);

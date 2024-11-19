@@ -1,49 +1,21 @@
-#define __AVR_ATmega16__
-#define F_CPU 14745600UL
-
 // Include section start
 
-#include <avr/io.h>
-#include <avr/interrupt.h>
-#include <util/delay.h>
-#include <avr/cpufunc.h>
-#include <avr/pgmspace.h>
-#include <avr/wdt.h>
-#include <stdio.h>
-#include <avr/eeprom.h>
-#include <stdlib.h>
+#define LCD_CONTROL_TWO_PORT
+#define ROM_READ pgm_read_byte
+
+#include "misc_def.h"
+#include "Lib/lcd.h"
+#include "strings.h"
 
 // Include section end
 
+
 // Preprocessor definitions start
-
-#define PIN_clear(port, pin)                port &= ~( 1 << pin )
-#define PIN_set(port, pin)                  port |= ( 1 << pin )
-#define PIN_toggle(port, pin)               port ^= ( 1 << pin )
-#define PIN_control(port, pin, state)       port = ( port & ~( 1 << pin ) ) | ( state << pin )
-
-#define PIN_is_high(pinport, pin)           (pinport & ( 1 << pin )) > 0
-#define PIN_is_low(pinport, pin)            (pinport & ( 1 << pin )) == 0
-
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
-#define stable_version  0
-#define beta_version    9
 
 // sense stages ADC channels PORTA
 #define metal_sense_adc 0
 //#define glass_sense_adc 1     NOT USED
 #define color_sense_adc 2
-
-#define DISP_STATE_NOP              0
-#define DISP_STATE_WAIT             1
-#define DISP_STATE_PUTHDATA         2
-#define DISP_STATE_PUTLDATA         3
-#define DISP_STATE_ENTOGGLE         4
-#define DISP_STATE_CLEAR            5
-#define DISP_STATE_HOME             6
-#define DISP_STATE_ENWAIT           7
-#define DISP_STATE_MCURSOR          8
 
 #define PWM0_pin        PB3
 #define PWM0_port       PORTB
@@ -56,8 +28,6 @@
 #define PWM1            1
 #define PWM2            2
 
-#define DISP_FRONTBUFFER    (unsigned char)   0
-#define DISP_BACKBUFFER     (unsigned char)   80
 
 #define RED_LED_pin         PB0
 #define RED_LED_port        PORTB
@@ -105,7 +75,7 @@
 #define EEP_VAR_ROM2RAM                 (uint8_t) 0xF0
 #define EEP_VAR_RAM2ROM                 (uint8_t) 0x0F
 
-#define EEPROM_VARIABLES_COUNT          (uint8_t) 13
+
 
 #define KEYPAD_KEY_A                    (uint8_t) 32
 #define KEYPAD_KEY_B                    (uint8_t) 64
@@ -130,8 +100,7 @@
 #define KEYPAD_ALT_RIGHT                KEYPAD_KEY_A + KEYPAD_KEY_6
 #define KEYPAD_ALT_SELECT               KEYPAD_KEY_A + KEYPAD_KEY_5
 
-#define EEP_PRG_SIZE                    18
-#define EEP_PRG_AMOUNT                  20
+
 
 #define MASK_LOAD_PARAMETERS_SOURCE                                 (uint8_t) 3
 #define MASK_LOAD_PARAMETERS_MODE                                   (uint8_t) 12
@@ -234,17 +203,9 @@ void USART_Transmit( char data );
 unsigned char USART_Receive( void );
 void USART_Flush( void );
 void USART_text( char* text );
+
 void wait_ms( uint16_t ms );
 void wait_us( uint8_t us );
-void lcd_command( uint8_t command );
-void lcd_write_nibble( uint8_t data );
-static void lcd_init( void );
-// TODO change defined pointer to void pointer
-void put_data_to_lcd_buffer(void * data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash);
-void put_one_char(unsigned char character, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer);
-void disp_clear_buffer(uint8_t buffer);
-uint8_t disp_swap_buffers(void);
-static uint8_t disp_active_buffer_get( void );
 uint8_t blink_init(uint8_t row, uint8_t col, uint8_t length, uint8_t period);
 void blink_stop( void );
 uint8_t read_keypad( void );
@@ -263,21 +224,13 @@ uint16_t metal_sense_buffer [10] = { 0 }, color_sense_buffer [10] = { 0 }, metal
 uint16_t system_counter = 0, sec_counter = 0;
 uint8_t sec = 0, min = 0, hour = 0;
 uint8_t adc_hold = 0, adc_read_count = 0;
-uint8_t currentCol, currentRow, lcdRowStart [4];
+
 
 uint8_t compare_PWM0, compare_PWM1, compare_PWM2;
 volatile uint8_t compbuff_PWM0, compbuff_PWM1, compbuff_PWM2;
 uint8_t key_code = 0;           // 0 - no key pressed, function keys - A = 32, B = 64, C = 96, D = 128, other characters 1:31, 0 = 23, 1 = 1, 2 = 2, 3 = 4, 4 = 8, 5 = 9, 6 = 11, 7 = 15, 8 = 16, 9 = 18, * = 22, # = 25 
 
-unsigned char disp_linear_buff [160];
 
-uint8_t disp_buffers_dirty = 0;        // buffer "dirty" bits, one means buffer updated and ready to display
-// bits: 7-4: disp_linear_buff[79:159] = 7 - 4th line .. 4 - 1st line, 3-0: disp_linear_buff[0:79] = 3 - 4th line .. 0 - 1st line
-
-uint8_t disp_operation = DISP_STATE_NOP;
-
-uint8_t disp_active_buffer = DISP_FRONTBUFFER;
-void *disp_buffer_pointer = NULL;
 
 uint8_t menu_state = MENU_STATE_DRAW_MAIN, last_menu_state = MENU_STATE_DRAW_MAIN;
 
@@ -367,111 +320,6 @@ const uint8_t * const setpoint_variables_pointer_array [ EEPROM_VARIABLES_COUNT 
 
 //const uint8_t program_memory_sizes [ 8 ] PROGMEM = { 1, 6, 1, 1, 2, 2, 2, 2 };
 
-const unsigned char keypad_num0_keys [5] PROGMEM = "-12-3";
-const unsigned char keypad_num1_keys [5] PROGMEM = "-45-6";
-const unsigned char keypad_num2_keys [5] PROGMEM = "-78-9";
-const unsigned char keypad_num3_keys [5] PROGMEM = "-*0-#";
-const unsigned char keypad_func_keys [5] PROGMEM = "-ABCD";
 
-const unsigned char key_map[26] PROGMEM = {
-        '-', '1', '2', '-', '3', '-', '-', '-', 
-        '4', '5', '-', '6', '-', '-', '-', 
-        '7', '8', '-', '9', '-', '-', '-', 
-        '*', '0', '-', '#'
-    };
-//
-
-
-// Menu 0 strings
-const unsigned char text_start [5] PROGMEM = "START";
-const unsigned char text_stop [4] PROGMEM = "STOP";
-const unsigned char text_select_program [14] PROGMEM = "select program";
-const unsigned char text_configure [9] PROGMEM = "configure";
-const unsigned char text_power_off [9] PROGMEM = "power off";
-
-const unsigned char text_no_program [11] PROGMEM = "No program!";
-const unsigned char text_program_loaded [14] PROGMEM = "Program loaded";
-
-// Menu 1 strings
-const unsigned char text_select_hint [20] PROGMEM = "1.LD 2.DEL 3.SV 4.NW";
-
-// Menu 2 strings
-const unsigned char text_configure0 [10] PROGMEM = "Configure:";
-#define text_program *(text_select_program + 7)
-
-const unsigned char text_system [6] PROGMEM = "system";
-const unsigned char text_exit [4] PROGMEM = "exit";
-const unsigned char text_status0 [7] PROGMEM = "Status:";
-const unsigned char text_ok [2] PROGMEM = "OK";
-const unsigned char text_err [3] PROGMEM = "Err";
-const unsigned char text_info [4] PROGMEM = "Info";
-const unsigned char text_warning [7] PROGMEM = "Warning";
-const unsigned char text_stopped [7] PROGMEM = "stopped";
-const unsigned char text_running [7] PROGMEM = "running";
-const unsigned char text_runtime0 [8] PROGMEM = "Runtime:";
-
-// Menu 3 strings
-const unsigned char text_parameters0 [11] PROGMEM = "Parameters:";
-const unsigned char text_view [4] PROGMEM = "view";
-const unsigned char text_save [4] PROGMEM = "save";
-
-// Menu 4 strings
-
-// Other strings
-const unsigned char text_goodbye [10] PROGMEM = "Goodbye :)";
-const unsigned char sorter_version [11] PROGMEM = "Sorter v" TOSTRING(stable_version) "." TOSTRING(beta_version);
-const unsigned char compilation_date [11] PROGMEM = __DATE__;
-const unsigned char dev0_name [14] PROGMEM = "Mateusz Ferenc";
-
-// EEPROM_VARIABLES_COUNT * 13, 13 due to one parameter name will be limited to 13 characters
-const unsigned char system_parameters_display_names [ EEPROM_VARIABLES_COUNT * 13 ] PROGMEM = 
-    "stg1_serv_acc"\
-    "stg1_serv_def"\
-    "stg1_serv_rej"\
-    "stg3_serv_acc"\
-    "stg3_serv_def"\
-    "stg3_serv_rej"\
-    "stg1_in_wait "\
-    "stg1_meas_hld"\
-    "stg1_out_wait"\
-    "stg3_in_wait "\
-    "stg3_meas_hld"\
-    "stg3_out_wait"\
-    "stg3_color_sw";
-
-//const uint8_t program_content_array [ 8 + ( 10 * EEP_PRG_SIZE ) ] PROGMEM = { 
-const uint8_t program_content_array [  11 * EEP_PRG_SIZE  ] PROGMEM = { 
-// ID, NAME,                            , stg1, stg3, stg1 val  , stg3 red  , stg3 green, stg3 blue
-    0, 'D', 'I', 'S', 'A', 'B', 'L', 'E', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    1, 'T', 'E', 'S', 'T', ' ', ' ', ' ', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    2, 'R', 'E', 'D', ' ', ' ', ' ', ' ', 0x00, 0x05, 0x00, 0x00, 0x03, 0x20, 0x03, 0x52, 0x03, 0x20,
-    3, 'G', 'R', 'E', 'E', 'N', ' ', ' ', 0x00, 0x59, 0x00, 0x00, 0x03, 0x3E, 0x03, 0x34, 0x03, 0x20,
-    4, 'B', 'L', 'U', 'E', ' ', ' ', ' ', 0x00, 0x65, 0x00, 0x00, 0x03, 0x20, 0x03, 0x34, 0x03, 0x3E,
-    5, 'M', 'E', 'T', '0', 'Y', 'E', 'S', 0x02, 0x03, 0x02, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    6, 'M', 'E', 'T', '1', 'N', 'O', ' ', 0x01, 0x03, 0x02, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    7, 'M', 'E', 'T', '2', 'N', 'O', ' ', 0x01, 0x00, 0x02, 0x84, 0x03, 0x20, 0x00, 0x00, 0x00, 0x00,
-    8, 'E', 'M', 'P', 'T', 'Y', ' ', ' ', 0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    9, 'E', 'M', 'P', 'T', 'Y', ' ', ' ', 0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    10, 'E', 'M', 'P', 'T', 'Y', ' ', ' ', 0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-};
-
-const unsigned char program_parameters_display_names [ 12 * 8 ] PROGMEM = 
-    "ID          "\
-    "NAME        "\
-    "Stage1 conf "\
-    "Stage3 conf "\
-    "Stage1 val  "\
-    "Stage3 RED  "\
-    "Stage3 GREEN"\
-    "Stage3 BLUE ";
-
-const unsigned char program_stage_config_display_names [ 10 * 7 ] PROGMEM = 
-    "Accept all"\
-    "Reject all"\
-    "greater   "\
-    "lesser    "\
-    "AND select"\
-    "OR  select"\
-    "ignore    ";
 
 //  Constans end
