@@ -11,10 +11,10 @@ uint8_t disp_active_buffer = DISP_FRONTBUFFER;
 void *disp_buffer_pointer = NULL;
 
 
-void wait_us( uint16_t us );
+void __wait_us( uint16_t us );
 
 
-static void process_lcd_FSM( void ){
+ void process_lcd_FSM( void ){
     static uint8_t disp_state = DISP_STATE_NOP, disp_last_state = DISP_STATE_NOP;
     static uint8_t disp_delay = 0, disp_temp_data = 0, disp_column_counter = 0;
 
@@ -125,9 +125,9 @@ static void process_lcd_FSM( void ){
 void put_data_to_lcd_buffer( void * data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash){
     unsigned char position = (unsigned char)(buffer + (row * 20) + col), temp;
     for (unsigned char offset = 0; length > 0 ; length--, offset++ ){
-        if ( from_flash )
-            temp = ROM_READ(data + offset);
-        else
+        //if ( from_flash )
+        //    temp = ROM_READ(data + offset);
+        //else
             temp = *((unsigned char *)data + offset);
         if ( temp < 32)
             break;
@@ -148,7 +148,7 @@ uint8_t disp_swap_buffers( void ){
     return disp_active_buffer;
 }
 
-static uint8_t disp_active_buffer_get( void ){
+uint8_t disp_active_buffer_get( void ){
     return disp_active_buffer;
 }
 
@@ -192,27 +192,27 @@ void lcd_write_nibble(uint8_t data){
     if ( data & 8 )
         PIN_set(D7_PORT, lcd_pins.D7);
 
-    wait_us(200);
+    __wait_us(200);
 
     PIN_clear(EN_PORT, lcd_pins.EN);
     PIN_set(EN_PORT, lcd_pins.EN);
     PIN_clear(EN_PORT, lcd_pins.EN);
 
-    wait_us(200);
+    __wait_us(200);
 }
 
-static void lcd_init(void){
+void lcd_init(void){
     for ( uint8_t enable_4b_mode = 0; enable_4b_mode < 3; enable_4b_mode++){
         lcd_write_nibble(0x03);
-        wait_ms(5);
+        __wait_us(5000);
     }
     lcd_write_nibble(0x02);
-    wait_ms(1);
+    __wait_us(1000);
     
     lcd_command(0x28);
     
     lcd_command(0x01);     // lcd clear
-    wait_ms(2);
+    __wait_us(2000);
 
     lcd_command(0x0C);
     lcd_command(0x06);
@@ -223,17 +223,18 @@ static void lcd_init(void){
     lcdRowStart[3] = 0x50 + 4;        // plus number of rows
     
     lcd_command(0x02);      // lcd home
-    wait_ms(2);
+    __wait_us(2000);
 
     PIN_set(RS_PORT, lcd_pins.RS);
     lcd_write_nibble('O' >> 4);
     lcd_write_nibble('O');
     lcd_write_nibble('K' >> 4);
     lcd_write_nibble('K');
-    wait_ms(120);
+    __wait_us(60000);
+    __wait_us(60000);
 }
 
-void wait_us( uint16_t us ){
+void __wait_us( uint16_t us ){
     while(us--)
         asm volatile ("nop"::);
 }

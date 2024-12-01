@@ -10,6 +10,7 @@
 *.eep
 
 Bin/*.txt
+Bin/*.s
 
 **/.vscode
 **/venv

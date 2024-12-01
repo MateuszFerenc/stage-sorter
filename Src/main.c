@@ -1,5 +1,8 @@
 #include "main.h"
 
+#define LCD_CONTROL_TWO_PORT
+#include "lcd.h"
+
 FUSES = {
     .low = (FUSE_BODEN & FUSE_CKSEL0),
     .high = (FUSE_BOOTSZ0 & FUSE_BOOTSZ1 & FUSE_EESAVE & FUSE_SPIEN & FUSE_CKOPT),

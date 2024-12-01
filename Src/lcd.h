@@ -19,24 +19,18 @@
 #define DISP_FRONTBUFFER    (unsigned char)   0
 #define DISP_BACKBUFFER     (unsigned char)   80
 
-#if ! defined (ROM_READ)
-
-#define ROM_READ pgm_read_byte
-
-#endif
-
 
 
 void lcd_command( uint8_t command );
 void lcd_write_nibble( uint8_t data );
-static void lcd_init( void );
+void lcd_init( void );
 // TODO change defined pointer to void pointer
 void put_data_to_lcd_buffer(void * data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash);
 void put_one_char(unsigned char character, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer);
 void disp_clear_buffer(uint8_t buffer);
 uint8_t disp_swap_buffers(void);
-static uint8_t disp_active_buffer_get( void );
-static void process_lcd_FSM( void );
+uint8_t disp_active_buffer_get( void );
+void process_lcd_FSM( void );
 
 
 unsigned char disp_linear_buff [160];

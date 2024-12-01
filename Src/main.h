@@ -1,10 +1,6 @@
 // Include section start
 
-#define LCD_CONTROL_TWO_PORT
-#define ROM_READ pgm_read_byte
-
 #include "misc_def.h"
-#include "Lib/lcd.h"
 #include "strings.h"
 
 // Include section end
