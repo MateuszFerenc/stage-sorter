@@ -87,6 +87,8 @@ ifneq ($(strip $(C_DEPS)),)
 endif
 endif
 
+-include $(C_DEPS)
+
 all: build size
 
 build: $(OUTPUT_DIR)/./$(TARGET).hex
@@ -140,12 +142,12 @@ $(OUTPUT_DIR)/./%.lst: $(OUTPUT_DIR)/./$(TARGET).elf
 install: $(OUTPUT_DIR)/./${TARGET}.hex
 	@echo
 	@echo ######   Programming device: $(DEVICE) with: $<   ######   
-	${AVRDUDE} ${AVRDUDE_FLAGS} -U flash:w:${DIR}/$<
+	${AVRDUDE} ${AVRDUDE_FLAGS} -U flash:w:$< -B 0.5
 
 program_eeprom:	$(OUTPUT_DIR)/./${TARGET}.eep
 	@echo
 	@echo ######   Writing $< to $(DEVICE) EEPROM   ######   
-	${AVRDUDE} ${AVRDUDE_FLAGS} -U eeprom:w:${DIR}/$<
+	${AVRDUDE} ${AVRDUDE_FLAGS} -U eeprom:w:$< -B 0.5
 
 .DEFAULTGOAL: all
 .PHONY: all build eep debug install program_eeprom clean

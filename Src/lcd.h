@@ -1,7 +1,7 @@
 #ifndef __LCD_H__
 #define __LCD_H__
 
-#include <stdio.h>
+#include "misc_def.h"
 
 #define PIN_clear(port, pin)                port &= ~( 1 << pin )
 #define PIN_set(port, pin)                  port |= ( 1 << pin )
@@ -31,94 +31,68 @@ void disp_clear_buffer(uint8_t buffer);
 uint8_t disp_swap_buffers(void);
 uint8_t disp_active_buffer_get( void );
 void process_lcd_FSM( void );
+unsigned char *get_buffer_address( void );
 
 
-unsigned char disp_linear_buff [160];
+#define RS_PORT PORTD
+#define EN_PORT PORTD
+#define D4_PORT PORTC
+#define D5_PORT PORTC
+#define D6_PORT PORTC
+#define D7_PORT PORTC
+#define RS_PIN PD3
+#define EN_PIN PD6
+#define D4_PIN PC0
+#define D5_PIN PC1
+#define D6_PIN PC2
+#define D7_PIN PC3
 
-struct pins {
-    volatile uint8_t RS;
-    volatile uint8_t EN;
-    volatile uint8_t D4;
-    volatile uint8_t D5;
-    volatile uint8_t D6;
-    volatile uint8_t D7;
-} lcd_pins;
-
-#if defined  (LCD_CONTROL_ONE_PORT)
-
-struct ports {
-    volatile uint8_t *LCD_PORT;
-} lcd_ports;
-
-#define RS_PORT *lcd_ports.LCD_PORT
-#define EN_PORT *lcd_ports.LCD_PORT
-#define D4_PORT *lcd_ports.LCD_PORT
-#define D5_PORT *lcd_ports.LCD_PORT
-#define D6_PORT *lcd_ports.LCD_PORT
-#define D7_PORT *lcd_ports.LCD_PORT
-
-#define ___PORT_DEFINED___
-
+#ifndef RS_PORT
+#error "LCD RS port is not defined!"
 #endif
 
-#if defined (LCD_CONTROL_TWO_PORT)
-
-struct ports {
-    volatile uint8_t *LCD_RS_EN_PORT;
-    volatile uint8_t *LCD_DATA_PORT;
-} lcd_ports;
-
-#define RS_PORT *lcd_ports.LCD_RS_EN_PORT
-#define EN_PORT *lcd_ports.LCD_RS_EN_PORT
-#define D4_PORT *lcd_ports.LCD_DATA_PORT
-#define D5_PORT *lcd_ports.LCD_DATA_PORT
-#define D6_PORT *lcd_ports.LCD_DATA_PORT
-#define D7_PORT *lcd_ports.LCD_DATA_PORT
-
-#define ___PORT_DEFINED___
-
+#ifndef EN_PORT
+#error "LCD EN port is not defined!"
 #endif
 
-#if defined (LCD_CONTROL_THREE_PORTS)
-
-struct ports {
-    volatile uint8_t *LCD_RS_PORT;
-    volatile uint8_t *LCD_EN_PORT;
-    volatile uint8_t *LCD_DATA_PORT;
-} lcd_ports;
-
-#define RS_PORT *lcd_ports.LCD_RS_PORT
-#define EN_PORT *lcd_ports.LCD_EN_PORT
-#define D4_PORT *lcd_ports.LCD_DATA_PORT
-#define D5_PORT *lcd_ports.LCD_DATA_PORT
-#define D6_PORT *lcd_ports.LCD_DATA_PORT
-#define D7_PORT *lcd_ports.LCD_DATA_PORT
-
-#define ___PORT_DEFINED___
-
+#ifndef D4_PORT
+#error "LCD D4 port is not defined!"
 #endif
 
-#ifndef ___PORT_DEFINED___
-
-struct ports {
-    volatile uint8_t *LCD_RS_PORT;
-    volatile uint8_t *LCD_EN_PORT;
-    volatile uint8_t *LCD_DATA4_PORT;
-    volatile uint8_t *LCD_DATA5_PORT;
-    volatile uint8_t *LCD_DATA6_PORT;
-    volatile uint8_t *LCD_DATA7_PORT;
-} lcd_ports;
-
-#define RS_PORT *lcd_ports.LCD_RS_PORT
-#define EN_PORT *lcd_ports.LCD_EN_PORT
-#define D4_PORT *lcd_ports.LCD_DATA4_PORT
-#define D5_PORT *lcd_ports.LCD_DATA5_PORT
-#define D6_PORT *lcd_ports.LCD_DATA6_PORT
-#define D7_PORT *lcd_ports.LCD_DATA7_PORT
-
-#define ___PORT_DEFAULT___
-
+#ifndef D5_PORT
+#error "LCD D5 port is not defined!"
 #endif
 
+#ifndef D6_PORT
+#error "LCD D6 port is not defined!"
+#endif
+
+#ifndef D7_PORT
+#error "LCD D7 port is not defined!"
+#endif
+
+#ifndef RS_PIN
+#error "LCD RS pin is not defined!"
+#endif
+
+#ifndef EN_PIN
+#error "LCD EN pin is not defined!"
+#endif
+
+#ifndef D4_PIN
+#error "LCD D4 pin is not defined!"
+#endif
+
+#ifndef D5_PIN
+#error "LCD D5 pin is not defined!"
+#endif
+
+#ifndef D6_PIN
+#error "LCD D6 pin is not defined!"
+#endif
+
+#ifndef D7_PIN
+#error "LCD D7 pin is not defined!"
+#endif
 
 #endif //   __LCD_H__

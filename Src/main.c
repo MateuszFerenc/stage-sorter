@@ -1,8 +1,5 @@
 #include "main.h"
 
-#define LCD_CONTROL_TWO_PORT
-#include "lcd.h"
-
 FUSES = {
     .low = (FUSE_BODEN & FUSE_CKSEL0),
     .high = (FUSE_BOOTSZ0 & FUSE_BOOTSZ1 & FUSE_EESAVE & FUSE_SPIEN & FUSE_CKOPT),
@@ -161,7 +158,7 @@ uint8_t blink_init(uint8_t row, uint8_t col, uint8_t length, uint8_t period){
 
     unsigned char offset = (unsigned char)(disp_active_buffer_get() + (row * 20) + col);
     for ( unsigned char character = 0; character < length; character++){
-        *( blink_buffer + character ) = *( disp_linear_buff + offset + character );
+        *( blink_buffer + character ) = *( get_buffer_address() + offset + character );
     }
 
     blink_position = 0x80 | ( row & 3 ) << 5 | ( col & 15 );
@@ -416,14 +413,6 @@ static void setup( void ){
     compare_PWM1 = 0;
     compare_PWM2 = 0;
 
-    lcd_pins.RS = PD3;
-    lcd_pins.EN = PD6;
-    lcd_pins.D4 = PC0;
-    lcd_pins.D5 = PC1;
-    lcd_pins.D6 = PC2;
-    lcd_pins.D7 = PC3;
-    lcd_ports.LCD_RS_EN_PORT = PORTD;
-    lcd_ports.LCD_DATA_PORT = PORTC;
     lcd_init();
     sei();
 }
@@ -460,11 +449,11 @@ int main( void ){
     PIN_set(PORTA, PA1);        // Turn on the backlight
 
     disp_clear_buffer(DISP_FRONTBUFFER);
-
+    
     // Display version and compilation date
     put_data_to_lcd_buffer(&sorter_version, 11, 0, 0, DISP_FRONTBUFFER, 1);
     put_data_to_lcd_buffer(&compilation_date, 11, 1, 0, DISP_FRONTBUFFER, 1);
-    put_data_to_lcd_buffer(&dev_name, 14, 3, 0, DISP_FRONTBUFFER, 1);
+    put_data_to_lcd_buffer(&dev_name, 14, 2, 0, DISP_FRONTBUFFER, 1);
     
     // Quick color sense LEDs test
     PIN_clear(RED_LED_port, RED_LED_pin);

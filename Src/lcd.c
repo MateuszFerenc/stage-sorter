@@ -10,18 +10,22 @@ uint8_t disp_operation = DISP_STATE_NOP;
 uint8_t disp_active_buffer = DISP_FRONTBUFFER;
 void *disp_buffer_pointer = NULL;
 
+unsigned char disp_linear_buff [160];
 
-void __wait_us( uint16_t us );
+static void __wait_us( uint16_t us );
 
+unsigned char *get_buffer_address( void ){
+    return &disp_linear_buff;
+}
 
- void process_lcd_FSM( void ){
+void process_lcd_FSM( void ){
     static uint8_t disp_state = DISP_STATE_NOP, disp_last_state = DISP_STATE_NOP;
     static uint8_t disp_delay = 0, disp_temp_data = 0, disp_column_counter = 0;
 
     if ( disp_state == DISP_STATE_NOP ){
         if ( ( disp_buffers_dirty || disp_column_counter ) && disp_operation == DISP_STATE_NOP ){
             if ( disp_column_counter == 0 ){
-                unsigned buff_switch_offset = ( disp_active_buffer == DISP_BACKBUFFER )? 4 : 0;
+                unsigned buff_switch_offset = ( disp_active_buffer == DISP_FRONTBUFFER )? 0 : 4;
                 for (unsigned char buff_idx = buff_switch_offset; buff_idx < ( 4 + buff_switch_offset ); buff_idx++ ){
                     if ( ( disp_buffers_dirty >> buff_idx ) & 1 ){
                         disp_buffer_pointer = (unsigned char *)disp_linear_buff + (unsigned char)(buff_idx * 20);
@@ -35,7 +39,7 @@ void __wait_us( uint16_t us );
                     }
                 }
             } else {
-                PIN_set(RS_PORT, lcd_pins.RS);
+                PIN_set(RS_PORT, RS_PIN);
                 
                 disp_state = DISP_STATE_PUTHDATA;
                 disp_temp_data = *((uint8_t *)disp_buffer_pointer++);
@@ -48,7 +52,7 @@ void __wait_us( uint16_t us );
 
     if ( disp_state == DISP_STATE_MCURSOR ){
         disp_state = DISP_STATE_PUTHDATA;
-        PIN_set(RS_PORT, lcd_pins.RS);
+        PIN_clear(RS_PORT, RS_PIN);
         disp_temp_data = 0x80 | ( lcdRowStart[currentRow] + currentCol);      // lcd home command
     }
 
@@ -56,38 +60,35 @@ void __wait_us( uint16_t us );
         disp_state = DISP_STATE_PUTHDATA;
         currentCol = 0;
         currentRow = 0;
-        PIN_set(RS_PORT, lcd_pins.RS);
+        PIN_clear(RS_PORT, RS_PIN);
         disp_temp_data = 0x02;      // lcd home command
     }
 
     if ( disp_state == DISP_STATE_CLEAR ){
         disp_state = DISP_STATE_PUTHDATA;
-        PIN_set(RS_PORT, lcd_pins.RS);
+        PIN_clear(RS_PORT, RS_PIN);
         disp_temp_data = 0x01;      // lcd clear command
     }
 
     if ( disp_state == DISP_STATE_PUTHDATA || disp_state == DISP_STATE_PUTLDATA ){
         disp_last_state = disp_state;
 
-        PIN_clear(D4_PORT, lcd_pins.D4);
-        PIN_clear(D5_PORT, lcd_pins.D5);
-        PIN_clear(D6_PORT, lcd_pins.D6);
-        PIN_clear(D7_PORT, lcd_pins.D7);
+        PIN_clear(D4_PORT, D4_PIN);
+        PIN_clear(D5_PORT, D5_PIN);
+        PIN_clear(D6_PORT, D6_PIN);
+        PIN_clear(D7_PORT, D7_PIN);
 
-        if ( disp_state == DISP_STATE_PUTHDATA )
-            disp_temp_data >>= 4;
+        if ( disp_state == DISP_STATE_PUTLDATA )
+            disp_temp_data = ( disp_temp_data << 4 ) | ( disp_temp_data >> 4 );
 
-        if ( disp_temp_data & 1 )
-            PIN_set(D4_PORT, lcd_pins.D4);
-        if ( disp_temp_data & 2 )
-            PIN_set(D5_PORT, lcd_pins.D5);
-        if ( disp_temp_data & 4 )
-            PIN_set(D6_PORT, lcd_pins.D6);
-        if ( disp_temp_data & 8 )
-            PIN_set(D7_PORT, lcd_pins.D7);
-
-        //PORTC &= 0xF0;
-        //PORTC |= ( disp_state == DISP_STATE_PUTHDATA ) ? ( disp_temp_data >> 4 ) : ( disp_temp_data & 0x0F );
+        if ( disp_temp_data & 16 )
+            PIN_set(D4_PORT, D4_PIN);
+        if ( disp_temp_data & 32 )
+            PIN_set(D5_PORT, D5_PIN);
+        if ( disp_temp_data & 64 )
+            PIN_set(D6_PORT, D6_PIN);
+        if ( disp_temp_data & 128 )
+            PIN_set(D7_PORT, D7_PIN);
 
         disp_state = DISP_STATE_WAIT;
         disp_delay = 2;
@@ -113,9 +114,9 @@ void __wait_us( uint16_t us );
     if ( disp_state == DISP_STATE_ENTOGGLE ){
         disp_state = DISP_STATE_ENWAIT;
 
-        PIN_clear(EN_PORT, lcd_pins.EN);
-        PIN_set(EN_PORT, lcd_pins.EN);
-        PIN_clear(EN_PORT, lcd_pins.EN);
+        PIN_clear(EN_PORT, EN_PIN);
+        PIN_set(EN_PORT, EN_PIN);
+        PIN_clear(EN_PORT, EN_PIN);
 
         disp_delay = 2;
     }
@@ -125,9 +126,9 @@ void __wait_us( uint16_t us );
 void put_data_to_lcd_buffer( void * data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash){
     unsigned char position = (unsigned char)(buffer + (row * 20) + col), temp;
     for (unsigned char offset = 0; length > 0 ; length--, offset++ ){
-        //if ( from_flash )
-        //    temp = ROM_READ(data + offset);
-        //else
+        if ( from_flash )
+            temp = pgm_read_byte(data + offset);
+        else
             temp = *((unsigned char *)data + offset);
         if ( temp < 32)
             break;
@@ -172,31 +173,31 @@ void put_one_char(unsigned char character, uint8_t length, uint8_t row, uint8_t 
 
 
 void lcd_command(uint8_t command){
-    PIN_clear(RS_PORT, lcd_pins.RS);
+    PIN_clear(RS_PORT, RS_PIN);
     lcd_write_nibble(command >> 4);
     lcd_write_nibble(command);
 }
 
 void lcd_write_nibble(uint8_t data){
-    PIN_clear(D4_PORT, lcd_pins.D4);
-    PIN_clear(D5_PORT, lcd_pins.D5);
-    PIN_clear(D6_PORT, lcd_pins.D6);
-    PIN_clear(D7_PORT, lcd_pins.D7);
+    PIN_clear(D4_PORT, D4_PIN);
+    PIN_clear(D5_PORT, D5_PIN);
+    PIN_clear(D6_PORT, D6_PIN);
+    PIN_clear(D7_PORT, D7_PIN);
 
     if ( data & 1 )
-        PIN_set(D4_PORT, lcd_pins.D4);
+        PIN_set(D4_PORT, D4_PIN);
     if ( data & 2 )
-        PIN_set(D5_PORT, lcd_pins.D5);
+        PIN_set(D5_PORT, D5_PIN);
     if ( data & 4 )
-        PIN_set(D6_PORT, lcd_pins.D6);
+        PIN_set(D6_PORT, D6_PIN);
     if ( data & 8 )
-        PIN_set(D7_PORT, lcd_pins.D7);
+        PIN_set(D7_PORT, D7_PIN);
 
     __wait_us(200);
 
-    PIN_clear(EN_PORT, lcd_pins.EN);
-    PIN_set(EN_PORT, lcd_pins.EN);
-    PIN_clear(EN_PORT, lcd_pins.EN);
+    PIN_clear(EN_PORT, EN_PIN);
+    PIN_set(EN_PORT, EN_PIN);
+    PIN_clear(EN_PORT, EN_PIN);
 
     __wait_us(200);
 }
@@ -225,16 +226,17 @@ void lcd_init(void){
     lcd_command(0x02);      // lcd home
     __wait_us(2000);
 
-    PIN_set(RS_PORT, lcd_pins.RS);
+    PIN_set(RS_PORT, RS_PIN);
     lcd_write_nibble('O' >> 4);
     lcd_write_nibble('O');
     lcd_write_nibble('K' >> 4);
     lcd_write_nibble('K');
+    lcd_command(0x02);      // lcd home
     __wait_us(60000);
     __wait_us(60000);
 }
 
-void __wait_us( uint16_t us ){
+static void __wait_us( uint16_t us ){
     while(us--)
-        asm volatile ("nop"::);
+        _delay_us(1);
 }

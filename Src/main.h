@@ -3,6 +3,8 @@
 #include "misc_def.h"
 #include "strings.h"
 
+#include "lcd.h"
+
 // Include section end
 
 
